@@ -1,0 +1,12 @@
+[package]
+name = "jam"
+description = "A tool jampacked to automate creating web projects"
+version = "0.1.0"
+edition = "2021"
+publish = false
+authors = ["Julius de Boer"]
+
+[dependencies]
+anyhow = "1.0"
+dialoguer = "0.10"
+reqwest = { version = "0.11", features = ["blocking"] }
