@@ -3,6 +3,7 @@ name = "jam"
 description = "A tool jampacked to automate creating web projects"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 publish = false
 authors = ["Julius de Boer"]
 
