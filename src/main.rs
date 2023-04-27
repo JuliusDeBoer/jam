@@ -1,6 +1,7 @@
 use std::{env, process, fs};
 use std::sync::Mutex;
 use anyhow::{self, bail};
+use colored::Colorize;
 use dialoguer::{Select, MultiSelect};
 use std::io::Write;
 use reqwest::Url;
@@ -167,7 +168,6 @@ const CSS_FRAMEWORK: Module = Module {
             snippet: Some(include_str!("templates/bootstrap.html")),
             overwrite_public: None,
             overwrite_index: None
-
         },
         &Choice {
             prompt: "Tailwind",
@@ -277,7 +277,7 @@ fn finalize_project(project: &Project) {
 }
 
 fn write_new(path: &String, data: &str) {
-    println!("Creating file: ./{}", path);
+    println!("Creating file {}", path.yellow().bold());
     let file = fs::File::create(format!("./{}", path)).unwrap();
     write!(&file, "{}", data).unwrap();
 }
