@@ -9,12 +9,46 @@ use reqwest::Url;
 static QUEUE: Mutex<Vec<&Choice>> = Mutex::new(Vec::new());
 
 #[derive(Clone)]
-struct Project {
+pub struct Project {
     pub name: String,
     pub root: String,
     pub public: String,
     pub index: String,
     pub snippets: String
+}
+
+pub trait Buildable {
+    fn build();
+    fn create_dir(path: String);
+    fn append_snippet(&mut self, snippet: &str);
+    fn create_file(data: String, file: &str);
+    fn download_file(&self, url: &str, file: &str);
+}
+
+impl Buildable for Project {
+    fn build() {
+        todo!();
+    }
+
+    fn create_dir(path: String) {
+        fs::create_dir(format!(".//{}", path)).unwrap();
+    }
+
+    fn create_file(data: String, path: &str) {
+        println!("Creating file {}", path.yellow().bold());
+        let file = fs::File::create(format!("./{}", path)).unwrap();
+        write!(&file, "{}", data).unwrap();
+    }
+
+    fn append_snippet(&mut self, snippet: &str) {
+        self.snippets.push_str(snippet);
+    }
+
+    fn download_file(&self, url: &str, file: &str) {
+        let url = Url::parse(url).unwrap();
+        let response = reqwest::blocking::get(url).unwrap();
+        Project::create_file(response.text().unwrap(), file);
+    }
 }
 
 struct Module {
@@ -32,6 +66,16 @@ struct Choice {
     pub snippet: Option<&'static str>,
     pub overwrite_public: Option<&'static str>,
     pub overwrite_index: Option<&'static str>
+}
+
+pub trait Choosable {
+    fn exec(project: Project);
+}
+
+impl Choosable for Choice {
+    fn exec(project: Project) {
+        todo!();
+    }
 }
 
 #[derive(Debug)]
