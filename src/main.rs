@@ -1,12 +1,10 @@
 use std::{env, process, fs};
-use std::sync::Mutex;
 use anyhow::{self, bail};
 use colored::Colorize;
 use dialoguer::{Select, MultiSelect};
+use lazy_static::lazy_static;
 use std::io::Write;
 use reqwest::Url;
-
-static QUEUE: Mutex<Vec<&Choice>> = Mutex::new(Vec::new());
 
 #[derive(Clone)]
 pub struct Project {
@@ -14,68 +12,57 @@ pub struct Project {
     pub root: String,
     pub public: String,
     pub index: String,
-    pub snippets: String
+    pub snippets: String,
+    pub queue: Vec<&'static Choice>,
+    use_root: bool
 }
 
-pub trait Buildable {
-    fn build();
-    fn create_dir(path: String);
-    fn append_snippet(&mut self, snippet: &str);
-    fn create_file(data: String, file: &str);
-    fn download_file(&self, url: &str, file: &str);
-}
-
-impl Buildable for Project {
-    fn build() {
+impl Project {
+    pub fn build() {
         todo!();
     }
 
-    fn create_dir(path: String) {
+    pub fn create_dir(&self, path: &str) -> &Project {
         fs::create_dir(format!(".//{}", path)).unwrap();
+        return self;
     }
 
-    fn create_file(data: String, path: &str) {
+    pub fn create_file(&self, data: &str, path: &str) -> &Project {
         println!("Creating file {}", path.yellow().bold());
         let file = fs::File::create(format!("./{}", path)).unwrap();
         write!(&file, "{}", data).unwrap();
+        return self;
     }
 
-    fn append_snippet(&mut self, snippet: &str) {
+    pub fn append_snippet(&mut self, snippet: &str) -> &Project {
         self.snippets.push_str(snippet);
+        return self;
     }
 
-    fn download_file(&self, url: &str, file: &str) {
+    pub fn download_file(&self, url: &str, file: &str) -> &Project {
         let url = Url::parse(url).unwrap();
         let response = reqwest::blocking::get(url).unwrap();
-        Project::create_file(response.text().unwrap(), file);
+        Project::create_file(self, response.text().unwrap().as_str(), file);
+        return self;
+    }
+
+    pub fn use_pub(&mut self, use_pub: bool) -> &Project {
+        self.use_root = !use_pub;
+        return self;
     }
 }
 
 struct Module {
     pub prompt: &'static str,
     pub default: Option<&'static str>,
-    pub choices: &'static [&'static Choice],
+    pub choices: &'static [&'static Choice]
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 struct Choice {
     pub prompt: &'static str,
-    pub dirs: &'static [&'static str],
-    pub files: &'static [&'static FileAndDest],
-    pub use_root_dir: bool,
-    pub snippet: Option<&'static str>,
-    pub overwrite_public: Option<&'static str>,
-    pub overwrite_index: Option<&'static str>
-}
-
-pub trait Choosable {
-    fn exec(project: Project);
-}
-
-impl Choosable for Choice {
-    fn exec(project: Project) {
-        todo!();
-    }
+    // pub exec: Box<dyn Fn(&mut Project) + Send + 'static>
+    pub exec: Box<dyn Fn(&mut Project) + Sync>
 }
 
 #[derive(Debug)]
@@ -85,153 +72,103 @@ struct FileAndDest {
     pub download: bool
 }
 
-const PHP_DIRS: Module = Module {
+lazy_static! {
+static ref PHP_DIRS: Module = Module {
     prompt: "Use php",
     default: Some("No"),
     choices: &[
         &Choice {
             prompt: "Yes",
-            dirs: &["public", "src", "config"],
-            files: &[],
-            use_root_dir: true,
-            snippet: None,
-            overwrite_public: Some("public"),
-            overwrite_index: None
+            exec: Box::new(| project: &mut Project | {
+                project.use_pub(false)
+                    .create_dir("public")
+                    .create_dir("src")
+                    .create_dir("config")
+                    .public = String::from("public");
+            })
         }
     ]
 };
 
-const PHP: Module = Module {
+static ref PHP: Module = Module {
     prompt: "Php boilerplate",
     default: None,
     choices: &[
         &Choice {
             prompt: "Database",
-            dirs: &["src", "config"],
-            files: &[
-                &FileAndDest {
-                    data: include_str!("templates/db.php"),
-                    dest: "src/db.php",
-                    download: false
-                },
-                &FileAndDest {
-                    data: include_str!("templates/db_conf.php"),
-                    dest: "config/db.php",
-                    download: false
-                }
-            ],
-            use_root_dir: true,
-            snippet: None,
-            overwrite_public: None,
-            overwrite_index: None
-
+            exec: Box::new(| project: &mut Project | {
+                project.use_pub(false)
+                    .create_dir("src")
+                    .create_dir("config")
+                    .create_file(include_str!("templates/db.php"), "src/db.php")
+                    .create_file(include_str!("templates/db_conf.php"), "config/db.php");
+            })
         },
         &Choice {
             prompt: "Jwt",
-            dirs: &["src", "config"],
-            files: &[
-                &FileAndDest {
-                    data: include_str!("templates/jwt.php"),
-                    dest: "src/jwt.php",
-                    download: false
-                },
-                &FileAndDest {
-                    data: include_str!("templates/jwt_conf.php"),
-                    dest: "config/jwt.php",
-                    download: false
-                }
-            ],
-            use_root_dir: true,
-            snippet: None,
-            overwrite_public: None,
-            overwrite_index: None
-
+            exec: Box::new(| project: &mut Project | {
+                project.use_pub(false)
+                    .create_dir("src")
+                    .create_dir("config")
+                    .create_file(include_str!("templates/jwt.php"), "src/jwt.php")
+                    .create_file(include_str!("templates/jwt_conf.php"), "config/jwt.php");
+            })
         }
     ]
 };
 
-const CSS: Module = Module {
+static ref CSS: Module = Module {
     prompt: "Create css file",
     default: Some("No"),
     choices: &[
         &Choice {
             prompt: "style.css",
-            dirs: &[],
-            files: &[
-                &FileAndDest {
-                    data: include_str!("templates/style.css"),
-                    dest: "style.css",
-                    download: false
-                }
-            ],
-            use_root_dir: false,
-            snippet: Some("\t<link rel=\"stylesheet\" href=\"style.css\">\n"),
-            overwrite_public: None,
-            overwrite_index: None
-
+            exec: Box::new(| project: &mut Project | {
+                project.use_pub(true)
+                    .create_file(include_str!("templates/style.css"), "style.css")
+                    .append_snippet("\t<link rel=\"stylesheet\" href=\"style.css\">\n");
+            })
         },
         &Choice {
             prompt: "style.scss",
-            dirs: &[],
-            files: &[
-                &FileAndDest {
-                    data: include_str!("templates/style.css"),
-                    dest: "style.scss",
-                    download: false
-                }
-            ],
-            use_root_dir: false,
-            snippet: Some("\t<link rel=\"stylesheet\" href=\"style.scss\">\n"),
-            overwrite_public: None,
-            overwrite_index: None
-
+            exec: Box::new(| project | {
+                project.use_pub(true)
+                    .create_file("templates/style.css", "style.scss")
+                    .append_snippet("\t<link rel=\"stylesheet\" href=\"style.scss\">\n");
+            })
         }
     ],
 };
 
-const CSS_FRAMEWORK: Module = Module {
+static ref CSS_FRAMEWORK: Module = Module {
     prompt: "Use css framework",
     default: None,
     choices: &[
         &Choice {
             prompt: "Bootstrap",
-            dirs: &["framework"],
-            files: &[
-                &FileAndDest {
-                    data: "https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css",
-                    dest: "framework/bootstrap.min.css",
-                    download: true
-                },
-                &FileAndDest {
-                    data: "https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js",
-                    dest: "framework/bootstrap.bundle.min.js",
-                    download: true,
-                }
-            ],
-            use_root_dir: false,
-            snippet: Some(include_str!("templates/bootstrap.html")),
-            overwrite_public: None,
-            overwrite_index: None
+            exec: Box::new(| project: &mut Project | {
+                project.use_pub(true)
+                    .create_dir("framework")
+                    .download_file("https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css", "framework/bootstrap.min.css")
+                    .download_file("https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js", "framework/bootstrap.bundle.min.css")
+                    .append_snippet(include_str!("templates/bootstrap.html"));
+            })
         },
         &Choice {
             prompt: "Tailwind",
-            dirs: &["framework"],
-            files: &[
-                &FileAndDest {
-                    data: "https://cdn.tailwindcss.com",
-                    dest: "framework/tailwind.js",
-                    download: true
-                }
-            ],
-            use_root_dir: false,
-            snippet: Some(include_str!("templates/tailwind.html")),
-            overwrite_public: None,
-            overwrite_index: None
+            exec: Box::new(| project | {
+                project.use_pub(true)
+                    .create_dir("framework")
+                    .download_file("https://cdn.tailwindcss,com", "framework/cdn.tailwindcss.com")
+                    .append_snippet(include_str!("templates/tailwind.html"));
+            })
         }
     ],
 };
 
-fn prompt_module(module: Module) -> Result<usize, anyhow::Error> {
+
+}
+fn prompt_module(project: &mut Project, module: Module) -> Result<usize, anyhow::Error> {
     if module.default.is_some() {
         let mut select = Select::new();
         select.with_prompt(module.prompt);
@@ -243,9 +180,8 @@ fn prompt_module(module: Module) -> Result<usize, anyhow::Error> {
         match select.interact() {
             Ok(v) => {
                 if v == 0 { return Ok(0); };
-                let mut lock = QUEUE.lock().unwrap();
                 // lock.insert(0, module.choices[v - 1]);
-                lock.push(module.choices[v - 1]);
+                project.queue.push(module.choices[v - 1]);
                 Ok(v)
             },
             Err(e) => Err(anyhow::format_err!(e))
@@ -258,9 +194,8 @@ fn prompt_module(module: Module) -> Result<usize, anyhow::Error> {
         }
         match multi_select.interact() {
             Ok(v) => {
-                let mut lock = QUEUE.lock().unwrap();
                 for index in v.clone() {
-                    lock.insert(0, module.choices[index]);
+                    project.queue.insert(0, module.choices[index]);
                 }
 
                 if v.is_empty() {
@@ -274,40 +209,40 @@ fn prompt_module(module: Module) -> Result<usize, anyhow::Error> {
     }
 }
 
-fn execute_choice(project: &mut Project, choice: &Choice) -> Option<anyhow::Error> {
-    if choice.overwrite_public.is_some() {
-        project.public = String::from(choice.overwrite_public.unwrap());
-    }
-
-    if choice.overwrite_index.is_some() {
-        project.index = String::from(choice.overwrite_index.unwrap());
-    }
-
-    if choice.snippet.is_some() {
-        project.snippets.push_str(choice.snippet.unwrap());
-    }
-
-    let path: String = if choice.use_root_dir {
-        project.root.to_string()
-    } else {
-        format!("{}/{}", project.root, project.public)
-    };
-    
-    #[allow(unused_must_use)]
-    for dir in choice.dirs {
-        fs::create_dir(format!("./{}/{}", path, dir));
-    }
-
-    for file in choice.files {
-        if file.download {
-            write_new(&format!("./{}/{}", path, file.dest), download(file.data).as_str());
-        } else {
-            write_new(&format!("./{}/{}", path, file.dest), file.data);
-        }
-    }
-
-    None
-}
+// fn execute_choice(project: &mut Project, choice: &Choice) -> Option<anyhow::Error> {
+//     // if choice.overwrite_public.is_some() {
+//     //     project.public = String::from(choice.overwrite_public.unwrap());
+//     // }
+//     //
+//     // if choice.overwrite_index.is_some() {
+//     //     project.index = String::from(choice.overwrite_index.unwrap());
+//     // }
+//     //
+//     // if choice.snippet.is_some() {
+//     //     project.snippets.push_str(choice.snippet.unwrap());
+//     // }
+//
+//     let path: String = if choice.use_root_dir {
+//         project.root.to_string()
+//     } else {
+//         format!("{}/{}", project.root, project.public)
+//     };
+//     
+//     #[allow(unused_must_use)]
+//     for dir in choice.dirs {
+//         fs::create_dir(format!("./{}/{}", path, dir));
+//     }
+//
+//     for file in choice.files {
+//         if file.download {
+//             write_new(&format!("./{}/{}", path, file.dest), download(file.data).as_str());
+//         } else {
+//             write_new(&format!("./{}/{}", path, file.dest), file.data);
+//         }
+//     }
+//
+//     None
+// }
 
 fn initialize_project(project: &Project) -> Result<&Project, anyhow::Error> {
     match fs::create_dir(project.root.as_str()) {
@@ -338,13 +273,15 @@ fn new(name: &str) -> Option<anyhow::Error> {
         root: String::from(name),
         public: String::new(),
         index: String::from("index.html"),
-        snippets: String::new()
+        snippets: String::new(),
+        queue: Vec::new(),
+        use_root: true
     };
 
-    match prompt_module(PHP_DIRS) {
+    match prompt_module(&mut project, PHP_DIRS) {
         Ok(v) => {
             if v == 1 {
-                if let Err(e) = prompt_module(PHP) {
+                if let Err(e) = prompt_module(&mut project, PHP) {
                     return Some(e);
                 }
             }
@@ -354,11 +291,11 @@ fn new(name: &str) -> Option<anyhow::Error> {
         }
     }
 
-    if let Err(e) = prompt_module(CSS) {
+    if let Err(e) = prompt_module(&mut project, CSS) {
         return Some(e);
     }
 
-    if let Err(e) = prompt_module(CSS_FRAMEWORK) {
+    if let Err(e) = prompt_module(&mut project, CSS_FRAMEWORK) {
         return Some(e);
     }
 
@@ -366,11 +303,9 @@ fn new(name: &str) -> Option<anyhow::Error> {
         return Some(e);
     }
 
-    let queue = QUEUE.lock().unwrap();
-
-    for choice in queue.clone() {
-        // This is gonna go wrong. To bad
-        execute_choice(&mut project, choice);
+    for choice in project.queue.clone() {
+        // execute_choice(&mut project, choice);
+        (choice.exec)(&mut project);
     }
 
     finalize_project(&project);
